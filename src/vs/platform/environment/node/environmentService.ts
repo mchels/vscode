@@ -51,7 +51,7 @@ export class EnvironmentService implements IEnvironmentService {
 	get userHome(): string { return os.homedir(); }
 
 	@memoize
-	get userDataPath(): string { return parseUserDataDir(this._args, process); }
+	get userDataPath(): string { return path.normalize(path.join(this.appRoot, '..', '..', 'User')); }
 
 	get appNameLong(): string { return product.nameLong; }
 
@@ -79,7 +79,7 @@ export class EnvironmentService implements IEnvironmentService {
 	get workspacesHome(): string { return path.join(this.userDataPath, 'Workspaces'); }
 
 	@memoize
-	get extensionsPath(): string { return parsePathArg(this._args['extensions-dir'], process) || process.env['VSCODE_EXTENSIONS'] || path.join(this.userHome, product.dataFolderName, 'extensions'); }
+	get extensionsPath(): string { return path.normalize(path.join(this.appRoot, '..', '..', 'extensions')); }
 
 	@memoize
 	get extensionDevelopmentPath(): string { return this._args.extensionDevelopmentPath ? path.normalize(this._args.extensionDevelopmentPath) : this._args.extensionDevelopmentPath; }
