@@ -138,22 +138,20 @@ export class SettingsChangeRelauncher implements IWorkbenchContribution {
 	private doConfirm(message: string, detail: string, primaryButton: string, confirmed: () => void): void {
 		this.windowService.isFocused().then(focused => {
 			if (focused) {
-				const confirm = this.messageService.confirmSync({
+				return this.messageService.confirm({
 					type: 'info',
 					message,
 					detail,
 					primaryButton
+				}).then(confirm => {
+					if (confirm) {
+						confirmed();
+					}
 				});
-
-				if (confirm) {
-					confirmed();
-				}
 			}
-		});
-	}
 
-	public getId(): string {
-		return 'workbench.relauncher';
+			return void 0;
+		});
 	}
 
 	public dispose(): void {

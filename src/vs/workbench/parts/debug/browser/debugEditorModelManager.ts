@@ -32,7 +32,7 @@ interface IDebugEditorModelData {
 const stickiness = TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges;
 
 export class DebugEditorModelManager implements IWorkbenchContribution {
-	static ID = 'breakpointManager';
+	static readonly ID = 'breakpointManager';
 
 	private modelDataMap: Map<string, IDebugEditorModelData>;
 	private toDispose: lifecycle.IDisposable[];
@@ -45,10 +45,6 @@ export class DebugEditorModelManager implements IWorkbenchContribution {
 		this.modelDataMap = new Map<string, IDebugEditorModelData>();
 		this.toDispose = [];
 		this.registerListeners();
-	}
-
-	public getId(): string {
-		return DebugEditorModelManager.ID;
 	}
 
 	public dispose(): void {

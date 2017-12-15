@@ -4,9 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { TPromise } from 'vs/base/common/winjs.base';
+import * as errors from 'vs/base/common/errors';
 import Event, { Emitter } from 'vs/base/common/event';
-import { ISettingsEditorModel, IFilterResult, ISetting, ISettingsGroup, IWorkbenchSettingsConfiguration, IFilterMetadata, IPreferencesSearchService } from 'vs/workbench/parts/preferences/common/preferences';
-import { IRange, Range } from 'vs/editor/common/core/range';
+import { ISettingsEditorModel, IFilterResult, ISetting, ISettingsGroup, IWorkbenchSettingsConfiguration, IFilterMetadata, IPreferencesSearchService, IPreferencesSearchModel } from 'vs/workbench/parts/preferences/common/preferences';
+import { IRange } from 'vs/editor/common/core/range';
 import { distinct } from 'vs/base/common/arrays';
 import * as strings from 'vs/base/common/strings';
 import { IJSONSchema } from 'vs/base/common/jsonSchema';
@@ -19,6 +20,7 @@ import { IInstantiationService } from 'vs/platform/instantiation/common/instanti
 import { IRequestService } from 'vs/platform/request/node/request';
 import { asJson } from 'vs/base/node/request';
 import { Disposable } from 'vs/base/common/lifecycle';
+import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 
 export interface IEndpointDetails {
 	urlBase: string;
@@ -72,13 +74,14 @@ export class PreferencesSearchService extends Disposable implements IPreferences
 	}
 }
 
-export class PreferencesSearchModel {
+export class PreferencesSearchModel implements IPreferencesSearchModel {
 	private _localProvider: LocalSearchProvider;
 	private _remoteProvider: RemoteSearchProvider;
 
 	constructor(
 		private provider: IPreferencesSearchService, private filter: string, remote: boolean,
-		@IInstantiationService instantiationService: IInstantiationService
+		@IInstantiationService instantiationService: IInstantiationService,
+		@ITelemetryService private telemetryService: ITelemetryService
 	) {
 		this._localProvider = new LocalSearchProvider(filter);
 
@@ -94,6 +97,15 @@ export class PreferencesSearchModel {
 
 		if (this._remoteProvider) {
 			return this._remoteProvider.filterPreferences(preferencesModel).then(null, err => {
+				const message = errors.getErrorMessage(err);
+
+				/* __GDPR__
+					"defaultSettings.searchError" : {
+						"message": { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
+					}
+				*/
+				this.telemetryService.publicLog('defaultSettings.searchError', { message });
+
 				return this._localProvider.filterPreferences(preferencesModel);
 			});
 		} else {
@@ -116,11 +128,11 @@ class LocalSearchProvider {
 			return regex.test(group.title);
 		};
 
-		const settingFilter = (setting: ISetting) => {
-			return new SettingMatches(this._filter, setting, (filter, setting) => preferencesModel.findValueMatches(filter, setting)).matches;
+		const settingMatcher = (setting: ISetting) => {
+			return new SettingMatches(this._filter, setting, true, (filter, setting) => preferencesModel.findValueMatches(filter, setting)).matches;
 		};
 
-		return TPromise.wrap(preferencesModel.filterSettings(this._filter, groupFilter, settingFilter));
+		return TPromise.wrap(preferencesModel.filterSettings(this._filter, groupFilter, settingMatcher));
 	}
 }
 
@@ -138,19 +150,6 @@ class RemoteSearchProvider {
 
 	filterPreferences(preferencesModel: ISettingsEditorModel): TPromise<IFilterResult> {
 		return this._remoteSearchP.then(remoteResult => {
-			const settingFilter = (setting: ISetting) => {
-				if (!!remoteResult.scoredResults[setting.key]) {
-					const settingMatches = new SettingMatches(this._filter, setting, (filter, setting) => preferencesModel.findValueMatches(filter, setting)).matches;
-					if (settingMatches.length) {
-						return settingMatches;
-					} else {
-						return [new Range(setting.keyRange.startLineNumber, setting.keyRange.startColumn, setting.keyRange.endLineNumber, setting.keyRange.startColumn)];
-					}
-				} else {
-					return null;
-				}
-			};
-
 			if (remoteResult) {
 				let sortedNames = Object.keys(remoteResult.scoredResults).sort((a, b) => remoteResult.scoredResults[b] - remoteResult.scoredResults[a]);
 				if (sortedNames.length) {
@@ -158,7 +157,8 @@ class RemoteSearchProvider {
 					sortedNames = sortedNames.filter(name => remoteResult.scoredResults[name] >= highScore / 2);
 				}
 
-				const result = preferencesModel.filterSettings(this._filter, group => null, settingFilter, sortedNames);
+				const settingMatcher = this.getRemoteSettingMatcher(sortedNames, preferencesModel);
+				const result = preferencesModel.filterSettings(this._filter, group => null, settingMatcher, sortedNames);
 				result.metadata = remoteResult;
 				return result;
 			} else {
@@ -176,7 +176,8 @@ class RemoteSearchProvider {
 				'User-Agent': 'request',
 				'Content-Type': 'application/json; charset=utf-8',
 				'api-key': endpoint.key
-			}
+			},
+			timeout: 5000
 		})
 			.then(context => {
 				if (context.res.statusCode >= 300) {
@@ -213,6 +214,22 @@ class RemoteSearchProvider {
 
 		return TPromise.as(p as any);
 	}
+
+	private getRemoteSettingMatcher(names: string[], preferencesModel: ISettingsEditorModel): any {
+		const resultSet = new Set();
+		names.forEach(name => resultSet.add(name));
+
+		return (setting: ISetting) => {
+			if (resultSet.has(setting.key)) {
+				const settingMatches = new SettingMatches(this._filter, setting, false, (filter, setting) => preferencesModel.findValueMatches(filter, setting)).matches;
+				if (settingMatches.length) {
+					return settingMatches;
+				}
+			}
+
+			return [];
+		};
+	}
 }
 
 const API_VERSION = 'api-version=2016-09-01-Preview';
@@ -234,12 +251,21 @@ function prepareUrl(query: string, endpoint: IEndpointDetails, buildNumber: numb
 	// Appending Fuzzy after each word.
 	query = query.replace(/\ +/g, '~ ') + '~';
 
-	let url = `${endpoint.urlBase}?search=${encodeURIComponent(userQuery + ' || ' + query)}`;
+	const encodedQuery = encodeURIComponent(userQuery + ' || ' + query);
+	let url = `${endpoint.urlBase}?`;
 	if (endpoint.key) {
+		url += `search=${encodedQuery}`;
 		url += `&${API_VERSION}&${QUERY_TYPE}&${SCORING_PROFILE}`;
-	}
-	if (buildNumber) {
-		url += `&$filter startbuildno le ${buildNumber} and endbuildno ge ${buildNumber}`;
+
+		if (buildNumber) {
+			url += `&$filter startbuildno le ${buildNumber} and endbuildno ge ${buildNumber}`;
+		}
+	} else {
+		url += `query=${encodedQuery}`;
+
+		if (buildNumber) {
+			url += `&build=${buildNumber}`;
+		}
 	}
 
 	return url;
@@ -253,7 +279,7 @@ class SettingMatches {
 
 	public readonly matches: IRange[];
 
-	constructor(searchString: string, setting: ISetting, private valuesMatcher: (filter: string, setting: ISetting) => IRange[]) {
+	constructor(searchString: string, setting: ISetting, private requireFullQueryMatch: boolean, private valuesMatcher: (filter: string, setting: ISetting) => IRange[]) {
 		this.matches = distinct(this._findMatchesInSetting(searchString, setting), (match) => `${match.startLineNumber}_${match.startColumn}_${match.endLineNumber}_${match.endColumn}_`);
 	}
 
@@ -261,7 +287,7 @@ class SettingMatches {
 		const result = this._doFindMatchesInSetting(searchString, setting);
 		if (setting.overrides && setting.overrides.length) {
 			for (const subSetting of setting.overrides) {
-				const subSettingMatches = new SettingMatches(searchString, subSetting, this.valuesMatcher);
+				const subSettingMatches = new SettingMatches(searchString, subSetting, this.requireFullQueryMatch, this.valuesMatcher);
 				let words = searchString.split(' ');
 				const descriptionRanges: IRange[] = this.getRangesForWords(words, this.descriptionMatchingWords, [subSettingMatches.descriptionMatchingWords, subSettingMatches.keyMatchingWords, subSettingMatches.valueMatchingWords]);
 				const keyRanges: IRange[] = this.getRangesForWords(words, this.keyMatchingWords, [subSettingMatches.descriptionMatchingWords, subSettingMatches.keyMatchingWords, subSettingMatches.valueMatchingWords]);
@@ -331,7 +357,7 @@ class SettingMatches {
 			const ranges = from.get(word);
 			if (ranges) {
 				result.push(...ranges);
-			} else if (others.every(o => !o.has(word))) {
+			} else if (this.requireFullQueryMatch && others.every(o => !o.has(word))) {
 				return [];
 			}
 		}

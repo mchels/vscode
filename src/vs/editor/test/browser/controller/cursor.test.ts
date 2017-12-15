@@ -1092,7 +1092,7 @@ suite('Editor Controller - Cursor', () => {
 
 class SurroundingMode extends MockMode {
 
-	private static _id = new LanguageIdentifier('surroundingMode', 3);
+	private static readonly _id = new LanguageIdentifier('surroundingMode', 3);
 
 	constructor() {
 		super(SurroundingMode._id);
@@ -1103,7 +1103,7 @@ class SurroundingMode extends MockMode {
 }
 
 class OnEnterMode extends MockMode {
-	private static _id = new LanguageIdentifier('onEnterMode', 3);
+	private static readonly _id = new LanguageIdentifier('onEnterMode', 3);
 
 	constructor(indentAction: IndentAction, outdentCurrentLine?: boolean) {
 		super(OnEnterMode._id);
@@ -1120,7 +1120,7 @@ class OnEnterMode extends MockMode {
 }
 
 class IndentRulesMode extends MockMode {
-	private static _id = new LanguageIdentifier('indentRulesMode', 4);
+	private static readonly _id = new LanguageIdentifier('indentRulesMode', 4);
 	constructor(indentationRules: IndentationRule) {
 		super(IndentRulesMode._id);
 		this._register(LanguageConfigurationRegistry.register(this.getLanguageIdentifier(), {
@@ -1415,6 +1415,78 @@ suite('Editor Controller - Regression tests', () => {
 			assert.equal(model.getLineContent(1), 'line1');
 			assert.equal(model.getLineContent(2), 'line1');
 			assert.equal(model.getLineContent(3), '');
+		});
+	});
+
+	test('issue #4996: Multiple cursor paste pastes contents of all cursors', () => {
+		usingCursor({
+			text: [
+				'line1',
+				'line2',
+				'line3'
+			],
+		}, (model, cursor) => {
+			cursor.setSelections('test', [new Selection(1, 1, 1, 1), new Selection(2, 1, 2, 1)]);
+
+			cursorCommand(cursor, H.Paste, {
+				text: 'a\nb\nc\nd',
+				pasteOnNewLine: false,
+				multicursorText: [
+					'a\nb',
+					'c\nd'
+				]
+			});
+
+			assert.equal(model.getValue(), [
+				'a',
+				'bline1',
+				'c',
+				'dline2',
+				'line3'
+			].join('\n'));
+		});
+	});
+
+	test('issue #16155: Paste into multiple cursors has edge case when number of lines equals number of cursors - 1', () => {
+		usingCursor({
+			text: [
+				'test',
+				'test',
+				'test',
+				'test'
+			],
+		}, (model, cursor) => {
+			cursor.setSelections('test', [
+				new Selection(1, 1, 1, 5),
+				new Selection(2, 1, 2, 5),
+				new Selection(3, 1, 3, 5),
+				new Selection(4, 1, 4, 5),
+			]);
+
+			cursorCommand(cursor, H.Paste, {
+				text: 'aaa\nbbb\nccc\n',
+				pasteOnNewLine: false,
+				multicursorText: null
+			});
+
+			assert.equal(model.getValue(), [
+				'aaa',
+				'bbb',
+				'ccc',
+				'',
+				'aaa',
+				'bbb',
+				'ccc',
+				'',
+				'aaa',
+				'bbb',
+				'ccc',
+				'',
+				'aaa',
+				'bbb',
+				'ccc',
+				'',
+			].join('\n'));
 		});
 	});
 
@@ -3177,7 +3249,7 @@ suite('Editor Controller - Indentation Rules', () => {
 
 	test('issue #36090: JS: editor.autoIndent seems to be broken', () => {
 		class JSMode extends MockMode {
-			private static _id = new LanguageIdentifier('indentRulesMode', 4);
+			private static readonly _id = new LanguageIdentifier('indentRulesMode', 4);
 			constructor() {
 				super(JSMode._id);
 				this._register(LanguageConfigurationRegistry.register(this.getLanguageIdentifier(), {
@@ -3264,7 +3336,7 @@ suite('Editor Controller - Indentation Rules', () => {
 
 	test('issue #38261: TAB key results in bizarre indentation in C++ mode ', () => {
 		class CppMode extends MockMode {
-			private static _id = new LanguageIdentifier('indentRulesMode', 4);
+			private static readonly _id = new LanguageIdentifier('indentRulesMode', 4);
 			constructor() {
 				super(CppMode._id);
 				this._register(LanguageConfigurationRegistry.register(this.getLanguageIdentifier(), {
@@ -3348,7 +3420,7 @@ function usingCursor(opts: ICursorOpts, callback: (model: Model, cursor: Cursor)
 
 class ElectricCharMode extends MockMode {
 
-	private static _id = new LanguageIdentifier('electricCharMode', 3);
+	private static readonly _id = new LanguageIdentifier('electricCharMode', 3);
 
 	constructor() {
 		super(ElectricCharMode._id);
@@ -3606,7 +3678,7 @@ suite('autoClosingPairs', () => {
 
 	class AutoClosingMode extends MockMode {
 
-		private static _id = new LanguageIdentifier('autoClosingMode', 5);
+		private static readonly _id = new LanguageIdentifier('autoClosingMode', 5);
 
 		constructor() {
 			super(AutoClosingMode._id);

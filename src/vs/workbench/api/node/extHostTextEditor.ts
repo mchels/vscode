@@ -20,7 +20,7 @@ import { IRange } from 'vs/editor/common/core/range';
 
 export class TextEditorDecorationType implements vscode.TextEditorDecorationType {
 
-	private static _Keys = new IdGenerator('TextEditorDecorationType');
+	private static readonly _Keys = new IdGenerator('TextEditorDecorationType');
 
 	private _proxy: MainThreadEditorsShape;
 	public key: string;
@@ -435,7 +435,7 @@ export class ExtHostTextEditor implements vscode.TextEditor {
 					return this._proxy.$trySetDecorationsFast(
 						this._id,
 						decorationType.key,
-						/*TODO: marshaller is too slow*/JSON.stringify(_ranges)
+						_ranges
 					);
 				}
 			}

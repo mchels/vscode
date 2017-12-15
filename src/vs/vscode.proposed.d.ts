@@ -86,9 +86,9 @@ declare module 'vscode' {
 	// todo@joh discover files etc
 	export interface FileSystemProvider {
 
-		onDidChange?: Event<FileChange[]>;
+		readonly onDidChange?: Event<FileChange[]>;
 
-		root: Uri;
+		readonly root: Uri;
 
 		// more...
 		//
@@ -199,63 +199,45 @@ declare module 'vscode' {
 	//#endregion
 
 	/**
-	 * Represents the debug console.
-	 */
-	export interface DebugConsole {
-		/**
-		 * Append the given value to the debug console.
-		 *
-		 * @param value A string, falsy values will not be printed.
-		 */
-		append(value: string): void;
-
-		/**
-		 * Append the given value and a line feed character
-		 * to the debug console.
-		 *
-		 * @param value A string, falsy values will be printed.
-		 */
-		appendLine(value: string): void;
-	}
-
-	export namespace debug {
-		/**
-		 * The [debug console](#DebugConsole) singleton.
-		 */
-		export let console: DebugConsole;
-	}
-
-	/**
-	 * Represents an action that can be performed in code.
-	 *
-	 * Shown using the [light bulb](https://code.visualstudio.com/docs/editor/editingevolved#_code-action)
+	 * A code action represents a change that can be performed in code, e.g. to fix a problem or
+	 * to refactor code.
 	 */
 	export class CodeAction {
+
 		/**
-		 * Label used to identify the code action in UI.
+		 * A short, human-readanle, title for this code action.
 		 */
 		title: string;
 
 		/**
-		 * Optional command that performs the code action.
+		 * A workspace edit this code action performs.
 		 *
-		 * Executed after `edits` if any edits are provided. Either `command` or `edits` must be provided for a `CodeAction`.
+		 * *Note* that either an [`edit`](CodeAction#edit) or a [`command`](CodeAction#command) must be supplied.
 		 */
-		command?: Command;
-
-		/**
-		 * Optional edit that performs the code action.
-		 *
-		 * Either `command` or `edits` must be provided for a `CodeAction`.
-		 */
-		edits?: TextEdit[] | WorkspaceEdit;
+		edit?: WorkspaceEdit;
 
 		/**
 		 * Diagnostics that this code action resolves.
 		 */
 		diagnostics?: Diagnostic[];
 
-		constructor(title: string, edits?: TextEdit[] | WorkspaceEdit);
+		/**
+		 * A command this code action performs.
+		 *
+		 * *Note* that either an [`edit`](CodeAction#edit) or a [`command`](CodeAction#command) must be supplied.
+		 */
+		command?: Command;
+
+		/**
+		 * Creates a new code action.
+		 *
+		 * A code action must have at least a [title](#CodeAction.title) and either [edits](#CodeAction.edits)
+		 * or a [command](#CodeAction.command).
+		 *
+		 * @param title The title of the code action.
+		 * @param edits The edit of the code action.
+		 */
+		constructor(title: string, edit?: WorkspaceEdit);
 	}
 
 	export interface CodeActionProvider {
@@ -273,5 +255,120 @@ declare module 'vscode' {
 		 * signaled by returning `undefined`, `null`, or an empty array.
 		 */
 		provideCodeActions2?(document: TextDocument, range: Range, context: CodeActionContext, token: CancellationToken): ProviderResult<(Command | CodeAction)[]>;
+	}
+
+	export namespace debug {
+
+		/**
+		 * List of breakpoints.
+		 *
+		 * @readonly
+		 */
+		export let breakpoints: Breakpoint[];
+
+		/**
+		 * An event that is emitted when a breakpoint is added, removed, or changed.
+		 */
+		export const onDidChangeBreakpoints: Event<BreakpointsChangeEvent>;
+	}
+
+	/**
+	 * An event describing a change to the set of [breakpoints](#debug.Breakpoint).
+	 */
+	export interface BreakpointsChangeEvent {
+		/**
+		 * Added breakpoints.
+		 */
+		readonly added: Breakpoint[];
+
+		/**
+		 * Removed breakpoints.
+		 */
+		readonly removed: Breakpoint[];
+
+		/**
+		 * Changed breakpoints.
+		 */
+		readonly changed: Breakpoint[];
+	}
+
+	/**
+	 * The base class of all breakpoint types.
+	 */
+	export class Breakpoint {
+		/**
+		 * Is breakpoint enabled.
+		 */
+		readonly enabled: boolean;
+		/**
+		 * An optional expression for conditional breakpoints.
+		 */
+		readonly condition?: string;
+		/**
+		 * An optional expression that controls how many hits of the breakpoint are ignored.
+		 */
+		readonly hitCondition?: string;
+
+		protected constructor(enabled: boolean, condition: string, hitCondition: string);
+	}
+
+	/**
+	 * A breakpoint specified by a source location.
+	 */
+	export class SourceBreakpoint extends Breakpoint {
+		/**
+		 * The source and line position of this breakpoint.
+		 */
+		readonly location: Location;
+
+		private constructor(enabled: boolean, condition: string, hitCondition: string, location: Location);
+	}
+
+	/**
+	 * A breakpoint specified by a function name.
+	 */
+	export class FunctionBreakpoint extends Breakpoint {
+		/**
+		 * The name of the function to which this breakpoint is attached.
+		 */
+		readonly functionName: string;
+
+		private constructor(enabled: boolean, condition: string, hitCondition: string, functionName: string);
+	}
+
+	/**
+	 * The severity level of a log message
+	 */
+	export enum LogLevel {
+		Trace = 1,
+		Debug = 2,
+		Info = 3,
+		Warning = 4,
+		Error = 5,
+		Critical = 6,
+		Off = 7
+	}
+
+	/**
+	 * A logger for writing to an extension's log file, and accessing its dedicated log directory.
+	 */
+	export interface Logger {
+		readonly onDidChangeLogLevel: Event<LogLevel>;
+		readonly currentLevel: LogLevel;
+		readonly logDirectory: Thenable<string>;
+
+		trace(message: string, ...args: any[]): void;
+		debug(message: string, ...args: any[]): void;
+		info(message: string, ...args: any[]): void;
+		warn(message: string, ...args: any[]): void;
+		error(message: string | Error, ...args: any[]): void;
+		critical(message: string | Error, ...args: any[]): void;
+	}
+
+	export interface ExtensionContext {
+		/**
+		 * This extension's logger
+		 */
+		logger: Logger;
 	}
 }
